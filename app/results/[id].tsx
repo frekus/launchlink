@@ -1,0 +1,265 @@
+import { db } from "@/lib/db";
+import { AppSchema } from "@/instant.schema";
+import { InstaQLEntity } from "@instantdb/react-native";
+import { useLocalSearchParams, useRouter } from "expo-router";
+import {
+  View,
+  Text,
+  ScrollView,
+  TouchableOpacity,
+  ActivityIndicator,
+} from "react-native";
+
+type MatchResult = InstaQLEntity<
+  AppSchema,
+  "matchResults",
+  { influencer: {} }
+>;
+
+const RANK_COLORS = ["#f59e0b", "#9ca3af", "#d97706", "#6366f1", "#6366f1"];
+const RANK_LABELS = ["#1", "#2", "#3", "#4", "#5"];
+
+function formatCount(n: number): string {
+  if (n >= 1000000) return `${(n / 1000000).toFixed(1)}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(0)}K`;
+  return String(n);
+}
+
+export default function ResultsScreen() {
+  const { id } = useLocalSearchParams<{ id: string }>();
+  const router = useRouter();
+
+  const { isLoading, error, data } = db.useQuery({
+    appSubmissions: {
+      $: { where: { id } },
+      matches: {
+        influencer: {},
+      },
+    },
+  });
+
+  if (isLoading) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f5f5f5" }}>
+        <ActivityIndicator size="large" color="#4f46e5" />
+        <Text style={{ marginTop: 12, color: "#666", fontSize: 14 }}>Loading results...</Text>
+      </View>
+    );
+  }
+
+  if (error) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
+        <Text style={{ color: "#ef4444", fontSize: 16, textAlign: "center" }}>
+          {error.message}
+        </Text>
+      </View>
+    );
+  }
+
+  const submission = data?.appSubmissions?.[0];
+  if (!submission) {
+    return (
+      <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
+        <Text style={{ color: "#666" }}>Submission not found.</Text>
+      </View>
+    );
+  }
+
+  const matches = [...(submission.matches ?? [])].sort((a, b) => a.rank - b.rank);
+
+  return (
+    <ScrollView
+      style={{ flex: 1, backgroundColor: "#f5f5f5" }}
+      contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
+    >
+      {/* Back button */}
+      <TouchableOpacity
+        onPress={() => router.back()}
+        style={{ flexDirection: "row", alignItems: "center", marginBottom: 16, marginTop: 4 }}
+      >
+        <Text style={{ color: "#4f46e5", fontSize: 15, fontWeight: "600" }}>← Back</Text>
+      </TouchableOpacity>
+
+      {/* App summary */}
+      <View
+        style={{
+          backgroundColor: "#4f46e5",
+          borderRadius: 12,
+          padding: 16,
+          marginBottom: 20,
+        }}
+      >
+        <Text style={{ color: "#c7d2fe", fontSize: 12, fontWeight: "600", marginBottom: 4 }}>
+          RESULTS FOR
+        </Text>
+        <Text style={{ color: "#fff", fontSize: 22, fontWeight: "800" }}>
+          {submission.appName}
+        </Text>
+        <Text style={{ color: "#c7d2fe", fontSize: 13, marginTop: 4 }}>
+          {submission.category} • {submission.targetAudience}
+        </Text>
+        <Text style={{ color: "#e0e7ff", fontSize: 13, marginTop: 8, lineHeight: 18 }}>
+          {submission.appDescription}
+        </Text>
+      </View>
+
+      {/* Results header */}
+      <Text style={{ fontSize: 16, fontWeight: "700", color: "#1a1a1a", marginBottom: 12 }}>
+        Top 5 TikTok Influencer Matches
+      </Text>
+
+      {matches.length === 0 ? (
+        <View
+          style={{
+            backgroundColor: "#fff",
+            borderRadius: 12,
+            padding: 24,
+            alignItems: "center",
+          }}
+        >
+          <ActivityIndicator color="#4f46e5" />
+          <Text style={{ color: "#666", marginTop: 8 }}>Processing matches...</Text>
+        </View>
+      ) : (
+        matches.map((match) => (
+          <InfluencerCard key={match.id} match={match} />
+        ))
+      )}
+    </ScrollView>
+  );
+}
+
+function InfluencerCard({ match }: { match: MatchResult }) {
+  const inf = match.influencer;
+  const rankIndex = match.rank - 1;
+  const rankColor = RANK_COLORS[rankIndex] ?? "#6366f1";
+  const isTop = match.rank === 1;
+
+  if (!inf) return null;
+
+  const scoreColor =
+    match.score >= 85 ? "#16a34a" : match.score >= 70 ? "#d97706" : "#dc2626";
+
+  return (
+    <View
+      style={{
+        backgroundColor: "#fff",
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 12,
+        shadowColor: "#000",
+        shadowOpacity: 0.06,
+        shadowRadius: 8,
+        shadowOffset: { width: 0, height: 2 },
+        elevation: 2,
+        borderLeftWidth: isTop ? 4 : 0,
+        borderLeftColor: "#f59e0b",
+      }}
+    >
+      {/* Rank + Name row */}
+      <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 12 }}>
+        <View
+          style={{
+            backgroundColor: rankColor,
+            width: 36,
+            height: 36,
+            borderRadius: 18,
+            justifyContent: "center",
+            alignItems: "center",
+            marginRight: 12,
+          }}
+        >
+          <Text style={{ color: "#fff", fontWeight: "800", fontSize: 14 }}>
+            {RANK_LABELS[rankIndex]}
+          </Text>
+        </View>
+
+        <View style={{ flex: 1 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={{ fontSize: 16, fontWeight: "700", color: "#1a1a1a", flex: 1 }}>
+              {inf.displayName}
+            </Text>
+            <View
+              style={{
+                backgroundColor: scoreColor + "20",
+                borderRadius: 20,
+                paddingHorizontal: 10,
+                paddingVertical: 3,
+                marginLeft: 8,
+              }}
+            >
+              <Text style={{ color: scoreColor, fontWeight: "700", fontSize: 13 }}>
+                {match.score}% match
+              </Text>
+            </View>
+          </View>
+          <Text style={{ fontSize: 13, color: "#6366f1", fontWeight: "500", marginTop: 2 }}>
+            @{inf.username}
+          </Text>
+        </View>
+      </View>
+
+      {/* Niche tag */}
+      <View
+        style={{
+          backgroundColor: "#f0f0ff",
+          alignSelf: "flex-start",
+          paddingHorizontal: 10,
+          paddingVertical: 4,
+          borderRadius: 20,
+          marginBottom: 10,
+        }}
+      >
+        <Text style={{ fontSize: 12, color: "#4f46e5", fontWeight: "600" }}>
+          {inf.niche}
+        </Text>
+      </View>
+
+      {/* Stats row */}
+      <View
+        style={{
+          flexDirection: "row",
+          backgroundColor: "#f9f9f9",
+          borderRadius: 8,
+          padding: 10,
+          marginBottom: 12,
+          gap: 0,
+        }}
+      >
+        <StatItem label="Followers" value={formatCount(inf.followerCount)} />
+        <View style={{ width: 1, backgroundColor: "#e5e7eb" }} />
+        <StatItem label="Avg Views" value={formatCount(inf.avgViews)} />
+        <View style={{ width: 1, backgroundColor: "#e5e7eb" }} />
+        <StatItem label="Engagement" value={`${inf.engagementRate}%`} />
+      </View>
+
+      {/* AI Reasoning */}
+      <View
+        style={{
+          backgroundColor: "#f8faff",
+          borderRadius: 8,
+          padding: 10,
+          borderLeftWidth: 3,
+          borderLeftColor: "#c7d2fe",
+        }}
+      >
+        <Text style={{ fontSize: 11, fontWeight: "700", color: "#6366f1", marginBottom: 4 }}>
+          WHY THIS MATCH
+        </Text>
+        <Text style={{ fontSize: 13, color: "#374151", lineHeight: 19 }}>
+          {match.reasoning}
+        </Text>
+      </View>
+    </View>
+  );
+}
+
+function StatItem({ label, value }: { label: string; value: string }) {
+  return (
+    <View style={{ flex: 1, alignItems: "center", paddingVertical: 2 }}>
+      <Text style={{ fontSize: 15, fontWeight: "700", color: "#1a1a1a" }}>{value}</Text>
+      <Text style={{ fontSize: 11, color: "#9ca3af", marginTop: 2 }}>{label}</Text>
+    </View>
+  );
+}

@@ -13,8 +13,28 @@ const _schema = i.schema({
       imageURL: i.string().optional(),
       type: i.string().optional(),
     }),
-    colors: i.entity({
-      value: i.string(),
+    influencers: i.entity({
+      username: i.string().unique().indexed(),
+      displayName: i.string(),
+      followerCount: i.number(),
+      avgViews: i.number(),
+      engagementRate: i.number(),
+      niche: i.string().indexed(),
+      tags: i.string(),
+      bio: i.string(),
+    }),
+    appSubmissions: i.entity({
+      appName: i.string(),
+      appDescription: i.string(),
+      category: i.string(),
+      targetAudience: i.string(),
+      status: i.string().indexed(),
+      createdAt: i.number().indexed(),
+    }),
+    matchResults: i.entity({
+      rank: i.number(),
+      score: i.number(),
+      reasoning: i.string(),
     }),
   },
   rooms: {},
@@ -31,6 +51,14 @@ const _schema = i.schema({
         has: "many",
         label: "linkedGuestUsers",
       },
+    },
+    submissionMatches: {
+      forward: { on: "appSubmissions", has: "many", label: "matches" },
+      reverse: { on: "matchResults", has: "one", label: "submission" },
+    },
+    matchInfluencer: {
+      forward: { on: "matchResults", has: "one", label: "influencer" },
+      reverse: { on: "influencers", has: "many", label: "matchResults" },
     },
   },
 });

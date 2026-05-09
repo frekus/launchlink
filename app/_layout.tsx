@@ -18,7 +18,6 @@ export default function RootLayout() {
   });
 
   if (!loaded) {
-    // Async font loading only occurs in development.
     return null;
   }
 
@@ -27,7 +26,11 @@ export default function RootLayout() {
       <Stack>
         <Stack.Screen
           name="index"
-          options={{ headerShown: true, headerTitle: "launchlink" }}
+          options={{ headerShown: true, headerTitle: "LaunchLink" }}
+        />
+        <Stack.Screen
+          name="results/[id]"
+          options={{ headerShown: false }}
         />
         <Stack.Screen name="+not-found" />
       </Stack>
