@@ -109,7 +109,7 @@ export default function ResultsScreen() {
         Top 5 TikTok Influencer Matches
       </Text>
 
-      {matches.length === 0 ? (
+      {submission.status === "error" ? (
         <View
           style={{
             backgroundColor: "#fff",
@@ -118,8 +118,30 @@ export default function ResultsScreen() {
             alignItems: "center",
           }}
         >
-          <ActivityIndicator color="#4f46e5" />
-          <Text style={{ color: "#666", marginTop: 8 }}>Processing matches...</Text>
+          <Text style={{ fontSize: 32, marginBottom: 8 }}>⚠️</Text>
+          <Text style={{ color: "#ef4444", fontWeight: "700", fontSize: 15 }}>
+            Something went wrong
+          </Text>
+          <Text style={{ color: "#999", fontSize: 13, marginTop: 4, textAlign: "center" }}>
+            Claude could not process this request. Please go back and try again.
+          </Text>
+        </View>
+      ) : matches.length === 0 ? (
+        <View
+          style={{
+            backgroundColor: "#fff",
+            borderRadius: 12,
+            padding: 24,
+            alignItems: "center",
+          }}
+        >
+          <ActivityIndicator color="#4f46e5" size="large" />
+          <Text style={{ color: "#1a1a1a", fontWeight: "600", marginTop: 12 }}>
+            Analysing influencers...
+          </Text>
+          <Text style={{ color: "#999", fontSize: 13, marginTop: 4 }}>
+            Claude is finding your best matches
+          </Text>
         </View>
       ) : (
         matches.map((match) => (

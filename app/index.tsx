@@ -61,7 +61,6 @@ export default function HomeScreen() {
 
     setIsLoading(true);
     try {
-      // Fetch all influencers from InstantDB
       const influencerData = await db.queryOnce({ influencers: {} });
       const influencers = influencerData.data.influencers;
 
@@ -74,7 +73,7 @@ export default function HomeScreen() {
         return;
       }
 
-      // Create submission record
+      // Create submission and navigate immediately — results screen updates reactively
       const submissionId = id();
       await db.transact(
         db.tx.appSubmissions[submissionId].update({
@@ -87,38 +86,42 @@ export default function HomeScreen() {
         })
       );
 
-      // Call Claude to rank influencers
-      const ranked = await rankInfluencers(
-        appName.trim(),
-        appDescription.trim(),
-        category,
-        targetAudience.trim(),
-        influencers
-      );
-
-      // Save match results and link to submission
-      const matchTxs = ranked.map((match) =>
-        db.tx.matchResults[id()]
-          .update({
-            rank: match.rank,
-            score: match.score,
-            reasoning: match.reasoning,
-          })
-          .link({ submission: submissionId })
-          .link({ influencer: match.influencerId })
-      );
-
-      await db.transact([
-        db.tx.appSubmissions[submissionId].update({ status: "complete" }),
-        ...matchTxs,
-      ]);
-
-      // Navigate to results
       router.push(`/results/${submissionId}`);
+      setIsLoading(false);
+
+      // Run Claude + save matches in background — useQuery on results screen updates automatically
+      try {
+        const ranked = await rankInfluencers(
+          appName.trim(),
+          appDescription.trim(),
+          category,
+          targetAudience.trim(),
+          influencers
+        );
+
+        const matchTxs = ranked.map((match) =>
+          db.tx.matchResults[id()]
+            .update({
+              rank: match.rank,
+              score: match.score,
+              reasoning: match.reasoning,
+            })
+            .link({ submission: submissionId, influencer: match.influencerId })
+        );
+
+        await db.transact([
+          db.tx.appSubmissions[submissionId].update({ status: "complete" }),
+          ...matchTxs,
+        ]);
+      } catch (err: any) {
+        console.error("Claude error:", err);
+        await db.transact(
+          db.tx.appSubmissions[submissionId].update({ status: "error" })
+        );
+      }
     } catch (err: any) {
       console.error(err);
       Alert.alert("Error", err.message ?? "Something went wrong. Please try again.");
-    } finally {
       setIsLoading(false);
     }
   }
