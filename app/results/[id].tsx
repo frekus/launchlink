@@ -4,6 +4,7 @@ import { AppSchema } from "@/instant.schema";
 import { InstaQLEntity, id } from "@instantdb/react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useEffect, useRef, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   View,
   Text,
@@ -26,6 +27,7 @@ function formatCount(n: number): string {
 export default function ResultsScreen() {
   const { id: submissionId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   const hasTriggered = useRef(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
@@ -118,16 +120,31 @@ export default function ResultsScreen() {
   const matches = [...(submission.matches ?? [])].sort((a, b) => a.rank - b.rank);
 
   return (
+    <View style={{ flex: 1, backgroundColor: "#f5f5f5" }}>
+      {/* Fixed header bar — sits safely below status bar */}
+      <View
+        style={{
+          paddingTop: insets.top,
+          backgroundColor: "#f5f5f5",
+          paddingHorizontal: 16,
+          paddingBottom: 8,
+          borderBottomWidth: 1,
+          borderBottomColor: "#ebebeb",
+        }}
+      >
+        <TouchableOpacity
+          onPress={() => router.back()}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={{ flexDirection: "row", alignItems: "center", paddingVertical: 6 }}
+        >
+          <Text style={{ color: "#4f46e5", fontSize: 16, fontWeight: "700" }}>← Back</Text>
+        </TouchableOpacity>
+      </View>
+
     <ScrollView
-      style={{ flex: 1, backgroundColor: "#f5f5f5" }}
+      style={{ flex: 1 }}
       contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
     >
-      <TouchableOpacity
-        onPress={() => router.back()}
-        style={{ flexDirection: "row", alignItems: "center", marginBottom: 16, marginTop: 4 }}
-      >
-        <Text style={{ color: "#4f46e5", fontSize: 15, fontWeight: "600" }}>← Back</Text>
-      </TouchableOpacity>
 
       {/* App summary */}
       <View style={{ backgroundColor: "#4f46e5", borderRadius: 12, padding: 16, marginBottom: 20 }}>
@@ -181,6 +198,7 @@ export default function ResultsScreen() {
         matches.map((match) => <InfluencerCard key={match.id} match={match} />)
       )}
     </ScrollView>
+    </View>
   );
 }
 
