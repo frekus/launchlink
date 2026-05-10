@@ -1,5 +1,4 @@
 import { db } from "@/lib/db";
-import { rankInfluencers } from "@/lib/claude";
 import { AppSchema } from "@/instant.schema";
 import { InstaQLEntity, id } from "@instantdb/react-native";
 import { useRouter } from "expo-router";
@@ -61,19 +60,6 @@ export default function HomeScreen() {
 
     setIsLoading(true);
     try {
-      const influencerData = await db.queryOnce({ influencers: {} });
-      const influencers = influencerData.data.influencers;
-
-      if (influencers.length === 0) {
-        Alert.alert(
-          "No influencers found",
-          "The influencer database is empty. Please run the seed script first."
-        );
-        setIsLoading(false);
-        return;
-      }
-
-      // Create submission and navigate immediately — results screen updates reactively
       const submissionId = id();
       await db.transact(
         db.tx.appSubmissions[submissionId].update({
@@ -85,43 +71,11 @@ export default function HomeScreen() {
           createdAt: Date.now(),
         })
       );
-
+      // Results screen handles the Claude call and saves matches
       router.push(`/results/${submissionId}`);
-      setIsLoading(false);
-
-      // Run Claude + save matches in background — useQuery on results screen updates automatically
-      try {
-        const ranked = await rankInfluencers(
-          appName.trim(),
-          appDescription.trim(),
-          category,
-          targetAudience.trim(),
-          influencers
-        );
-
-        const matchTxs = ranked.map((match) =>
-          db.tx.matchResults[id()]
-            .update({
-              rank: match.rank,
-              score: match.score,
-              reasoning: match.reasoning,
-            })
-            .link({ submission: submissionId, influencer: match.influencerId })
-        );
-
-        await db.transact([
-          db.tx.appSubmissions[submissionId].update({ status: "complete" }),
-          ...matchTxs,
-        ]);
-      } catch (err: any) {
-        console.error("Claude error:", err);
-        await db.transact(
-          db.tx.appSubmissions[submissionId].update({ status: "error" })
-        );
-      }
     } catch (err: any) {
-      console.error(err);
-      Alert.alert("Error", err.message ?? "Something went wrong. Please try again.");
+      Alert.alert("Error", err.message ?? "Something went wrong.");
+    } finally {
       setIsLoading(false);
     }
   }

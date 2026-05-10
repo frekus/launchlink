@@ -1,7 +1,9 @@
 import { db } from "@/lib/db";
+import { rankInfluencers } from "@/lib/claude";
 import { AppSchema } from "@/instant.schema";
-import { InstaQLEntity } from "@instantdb/react-native";
+import { InstaQLEntity, id } from "@instantdb/react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -10,11 +12,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 
-type MatchResult = InstaQLEntity<
-  AppSchema,
-  "matchResults",
-  { influencer: {} }
->;
+type MatchResult = InstaQLEntity<AppSchema, "matchResults", { influencer: {} }>;
 
 const RANK_COLORS = ["#f59e0b", "#9ca3af", "#d97706", "#6366f1", "#6366f1"];
 const RANK_LABELS = ["#1", "#2", "#3", "#4", "#5"];
@@ -26,23 +24,75 @@ function formatCount(n: number): string {
 }
 
 export default function ResultsScreen() {
-  const { id } = useLocalSearchParams<{ id: string }>();
+  const { id: submissionId } = useLocalSearchParams<{ id: string }>();
   const router = useRouter();
+  const hasTriggered = useRef(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
+  // Always query both — no conditional hooks
   const { isLoading, error, data } = db.useQuery({
     appSubmissions: {
-      $: { where: { id } },
-      matches: {
-        influencer: {},
-      },
+      $: { where: { id: submissionId } },
+      matches: { influencer: {} },
     },
   });
+
+  const { data: infData } = db.useQuery({ influencers: {} });
+
+  const submission = data?.appSubmissions?.[0];
+  const influencers = infData?.influencers ?? [];
+
+  useEffect(() => {
+    if (
+      !submission ||
+      submission.status !== "pending" ||
+      influencers.length === 0 ||
+      hasTriggered.current
+    ) return;
+
+    hasTriggered.current = true;
+    runMatching();
+
+    async function runMatching() {
+      try {
+        setErrorMsg(null);
+
+        const ranked = await rankInfluencers(
+          submission!.appName,
+          submission!.appDescription,
+          submission!.category,
+          submission!.targetAudience,
+          influencers
+        );
+
+        const matchTxs = ranked.map((match) =>
+          db.tx.matchResults[id()]
+            .update({
+              rank: match.rank,
+              score: match.score,
+              reasoning: match.reasoning,
+            })
+            .link({ submission: submissionId, influencer: match.influencerId })
+        );
+
+        await db.transact([
+          db.tx.appSubmissions[submissionId].update({ status: "complete" }),
+          ...matchTxs,
+        ]);
+      } catch (err: any) {
+        console.error("Matching error:", err);
+        setErrorMsg(err?.message ?? "Unknown error");
+        await db.transact(
+          db.tx.appSubmissions[submissionId].update({ status: "error" })
+        ).catch(() => {});
+      }
+    }
+  }, [submission?.status, influencers.length]);
 
   if (isLoading) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#f5f5f5" }}>
         <ActivityIndicator size="large" color="#4f46e5" />
-        <Text style={{ marginTop: 12, color: "#666", fontSize: 14 }}>Loading results...</Text>
       </View>
     );
   }
@@ -50,14 +100,13 @@ export default function ResultsScreen() {
   if (error) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center", padding: 24 }}>
-        <Text style={{ color: "#ef4444", fontSize: 16, textAlign: "center" }}>
+        <Text style={{ color: "#ef4444", fontSize: 15, textAlign: "center" }}>
           {error.message}
         </Text>
       </View>
     );
   }
 
-  const submission = data?.appSubmissions?.[0];
   if (!submission) {
     return (
       <View style={{ flex: 1, justifyContent: "center", alignItems: "center" }}>
@@ -73,7 +122,6 @@ export default function ResultsScreen() {
       style={{ flex: 1, backgroundColor: "#f5f5f5" }}
       contentContainerStyle={{ padding: 16, paddingBottom: 40 }}
     >
-      {/* Back button */}
       <TouchableOpacity
         onPress={() => router.back()}
         style={{ flexDirection: "row", alignItems: "center", marginBottom: 16, marginTop: 4 }}
@@ -82,14 +130,7 @@ export default function ResultsScreen() {
       </TouchableOpacity>
 
       {/* App summary */}
-      <View
-        style={{
-          backgroundColor: "#4f46e5",
-          borderRadius: 12,
-          padding: 16,
-          marginBottom: 20,
-        }}
-      >
+      <View style={{ backgroundColor: "#4f46e5", borderRadius: 12, padding: 16, marginBottom: 20 }}>
         <Text style={{ color: "#c7d2fe", fontSize: 12, fontWeight: "600", marginBottom: 4 }}>
           RESULTS FOR
         </Text>
@@ -104,37 +145,30 @@ export default function ResultsScreen() {
         </Text>
       </View>
 
-      {/* Results header */}
       <Text style={{ fontSize: 16, fontWeight: "700", color: "#1a1a1a", marginBottom: 12 }}>
         Top 5 TikTok Influencer Matches
       </Text>
 
       {submission.status === "error" ? (
-        <View
-          style={{
-            backgroundColor: "#fff",
-            borderRadius: 12,
-            padding: 24,
-            alignItems: "center",
-          }}
-        >
-          <Text style={{ fontSize: 32, marginBottom: 8 }}>⚠️</Text>
-          <Text style={{ color: "#ef4444", fontWeight: "700", fontSize: 15 }}>
+        <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 24, alignItems: "center" }}>
+          <Text style={{ fontSize: 28, marginBottom: 8 }}>⚠️</Text>
+          <Text style={{ color: "#ef4444", fontWeight: "700", fontSize: 15, marginBottom: 6 }}>
             Something went wrong
           </Text>
-          <Text style={{ color: "#999", fontSize: 13, marginTop: 4, textAlign: "center" }}>
-            Claude could not process this request. Please go back and try again.
-          </Text>
+          {errorMsg && (
+            <Text style={{ color: "#666", fontSize: 12, textAlign: "center", marginBottom: 8 }}>
+              {errorMsg}
+            </Text>
+          )}
+          <TouchableOpacity
+            onPress={() => router.back()}
+            style={{ backgroundColor: "#4f46e5", borderRadius: 8, paddingHorizontal: 20, paddingVertical: 10, marginTop: 4 }}
+          >
+            <Text style={{ color: "#fff", fontWeight: "600" }}>Go back and retry</Text>
+          </TouchableOpacity>
         </View>
       ) : matches.length === 0 ? (
-        <View
-          style={{
-            backgroundColor: "#fff",
-            borderRadius: 12,
-            padding: 24,
-            alignItems: "center",
-          }}
-        >
+        <View style={{ backgroundColor: "#fff", borderRadius: 12, padding: 24, alignItems: "center" }}>
           <ActivityIndicator color="#4f46e5" size="large" />
           <Text style={{ color: "#1a1a1a", fontWeight: "600", marginTop: 12 }}>
             Analysing influencers...
@@ -144,9 +178,7 @@ export default function ResultsScreen() {
           </Text>
         </View>
       ) : (
-        matches.map((match) => (
-          <InfluencerCard key={match.id} match={match} />
-        ))
+        matches.map((match) => <InfluencerCard key={match.id} match={match} />)
       )}
     </ScrollView>
   );
@@ -156,7 +188,6 @@ function InfluencerCard({ match }: { match: MatchResult }) {
   const inf = match.influencer;
   const rankIndex = match.rank - 1;
   const rankColor = RANK_COLORS[rankIndex] ?? "#6366f1";
-  const isTop = match.rank === 1;
 
   if (!inf) return null;
 
@@ -175,11 +206,10 @@ function InfluencerCard({ match }: { match: MatchResult }) {
         shadowRadius: 8,
         shadowOffset: { width: 0, height: 2 },
         elevation: 2,
-        borderLeftWidth: isTop ? 4 : 0,
+        borderLeftWidth: match.rank === 1 ? 4 : 0,
         borderLeftColor: "#f59e0b",
       }}
     >
-      {/* Rank + Name row */}
       <View style={{ flexDirection: "row", alignItems: "flex-start", marginBottom: 12 }}>
         <View
           style={{
@@ -222,7 +252,6 @@ function InfluencerCard({ match }: { match: MatchResult }) {
         </View>
       </View>
 
-      {/* Niche tag */}
       <View
         style={{
           backgroundColor: "#f0f0ff",
@@ -233,12 +262,9 @@ function InfluencerCard({ match }: { match: MatchResult }) {
           marginBottom: 10,
         }}
       >
-        <Text style={{ fontSize: 12, color: "#4f46e5", fontWeight: "600" }}>
-          {inf.niche}
-        </Text>
+        <Text style={{ fontSize: 12, color: "#4f46e5", fontWeight: "600" }}>{inf.niche}</Text>
       </View>
 
-      {/* Stats row */}
       <View
         style={{
           flexDirection: "row",
@@ -246,7 +272,6 @@ function InfluencerCard({ match }: { match: MatchResult }) {
           borderRadius: 8,
           padding: 10,
           marginBottom: 12,
-          gap: 0,
         }}
       >
         <StatItem label="Followers" value={formatCount(inf.followerCount)} />
@@ -256,7 +281,6 @@ function InfluencerCard({ match }: { match: MatchResult }) {
         <StatItem label="Engagement" value={`${inf.engagementRate}%`} />
       </View>
 
-      {/* AI Reasoning */}
       <View
         style={{
           backgroundColor: "#f8faff",
